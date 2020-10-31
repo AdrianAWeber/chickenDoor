@@ -20,8 +20,6 @@
 #include <avr/sleep.h>
 #include "LowPower.h"
 
-#define STOP_BY_SENSOR 1
-
 /**
  * Digital Pins
  */
@@ -97,9 +95,9 @@ void loop() {
 
   if (move_complete_interr == 1){ // Move by Button: complete move to end
     if (position_door == 1){ // open
-      close_door(TIME_CLOSE);
+      close_door(TIME_CLOSE,1);
     } else {
-      open_door(TIME_OPEN);
+      open_door(TIME_OPEN,1);
     }
     move_complete_interr = 0;
     move_step_interr = 0;
@@ -120,12 +118,12 @@ void loop() {
       delay(200);
       move_step_interr = digitalRead(MOVE_STEP);//digitalRead(BTN_step_read);
         
-      if ((move_step_interr == 1) && (STOP_BY_SENSOR == 1)) {
+      /*if ((move_step_interr == 1)) {
         int endPos = 0;
         if (dir == 1) endPos = digitalRead(End_down); // moving down
         if (dir == 0) endPos = digitalRead(End_up);
         if (endPos == 1) move_step_interr = 0; // break loop due to End of door
-      }
+      }*/
     }
 
     // Stop Motor again
@@ -135,10 +133,10 @@ void loop() {
     digitalWrite(MOTOR_OUT_5V,LOW);
 
     //Unpower the Reeds
-    if (STOP_BY_SENSOR == 1) { 
+    //if (STOP_BY_SENSOR == 1) { 
       digitalWrite(DOWN_5V,LOW);
       digitalWrite(UP_5V,LOW);
-    }
+    //}
      
     move_complete_interr = 0;
     move_step_interr = 0;
@@ -154,9 +152,13 @@ void loop() {
 
       // evening
       if (light <= LightThreshold_close && light_pre > LightThreshold_close && position_door == 1){
-        close_door(TIME_CLOSE);
+        if (close_door(TIME_CLOSE,1) > 0) { // first try did not work out.
+          close_door(TIME_CLOSE,0); // close by time.
+        }
       } else if (light > LightThreshold_open && light_pre <= LightThreshold_open && position_door == 0) {
-        open_door(TIME_OPEN);
+         if (open_door(TIME_OPEN,1) == 1){ // Timeout!
+           // TODO: Do something in case of timeout
+         }
       }
       
       light_pre = light;
@@ -170,17 +172,26 @@ void loop() {
 
 
 // open the door
-void open_door(unsigned int open_time){
+byte open_door(unsigned int open_time, unsigned int STOP_BY_SENSOR){
   //Motor Settings for upwards
   up();
 
+  byte timeoutFlag = 0;
+ 
   // enable Motor
   digitalWrite(Motor_En, HIGH);
 
   if (STOP_BY_SENSOR == 1) {
     bool endPos = 0;
+    unsigned int cntTime = 0;
     while (endPos == 0){
       endPos = digitalRead(End_up);
+      delay(5); // 5ms;
+      cntTime++;
+      if (cntTime > 6000) {// ~30 sek; Timeout
+        timeoutFlag = 1;
+        break; 
+      }
     }
   } else { // stop by time
     delay(open_time);
@@ -192,30 +203,54 @@ void open_door(unsigned int open_time){
   digitalWrite(MOTOR_OUT_5V,LOW);
 
   //Unpower the Reeds
-  if (STOP_BY_SENSOR == 1) { 
+  //if (STOP_BY_SENSOR == 1) { 
     digitalWrite(DOWN_5V,LOW);
     digitalWrite(UP_5V,LOW);
-  }
+ // }
 
   // Save status to EEPROM
+  // Even if timeout is active, door is most likely open as no sideflip of string is possible.
   EEPROM.write(0,1); // open
   position_door = 1;
+
+  return timeoutFlag;
 }
 
 
 
 //close the door
-void close_door(unsigned int closeTime){
+byte close_door(unsigned int closeTime, unsigned int STOP_BY_SENSOR){
   // Motor Setting to close door
   down();
 
+  byte timeoutFlag = 0;  // O: Closed; 1: opened again; 2: Timeout
+  
   // enable Motor
   digitalWrite(Motor_En, HIGH);
 
   if (STOP_BY_SENSOR == 1) {
     bool endPos = 0;
+    unsigned int cntTime = 0;
     while (endPos == 0){
       endPos = digitalRead(End_down);
+      if (endPos == 1) {
+        timeoutFlag = 0;
+      } else {
+        if (cntTime > 800) {  //~ 4sek to avoid measurement in open position.
+          endPos = digitalRead(End_up);
+          if (endPos == 1) {
+            timeoutFlag = 1; // again in opened position;
+            break;
+          }
+        }
+      }
+      delay(5); // 5ms;
+      cntTime++;
+      if (cntTime > 6000) {// ~30 sek; Timeout
+        timeoutFlag = 2;
+        endPos = 1;
+        break; 
+      }
     }
   } else { // stop by time
     delay(closeTime);
@@ -229,14 +264,24 @@ void close_door(unsigned int closeTime){
   digitalWrite(MOTOR_OUT_5V,LOW);
 
   //Unpower the Reeds
-  if (STOP_BY_SENSOR == 1) { 
+  //if (STOP_BY_SENSOR == 1) { 
     digitalWrite(DOWN_5V,LOW);
     digitalWrite(UP_5V,LOW);
-  }  
+  //}  
 
   // Save status to EEPROM
-  EEPROM.write(0,0); // closed
-  position_door = 0;
+  if (timeoutFlag == 0) {
+    EEPROM.write(0,0); // closed
+    position_door = 0;
+  } else if (timeoutFlag == 1){
+    EEPROM.write(0,1); // open
+    position_door = 1;
+  } else { // Timeout: we think we are open.
+    EEPROM.write(0,1); // open
+    position_door = 1;
+  }
+
+  return timeoutFlag; 
 }
 
 void up(){
@@ -246,7 +291,9 @@ void up(){
   digitalWrite(Motor_B,LOW);
 
   //power the upwards Reed 
-  if (STOP_BY_SENSOR == 1) digitalWrite(UP_5V,HIGH);  
+  //if (STOP_BY_SENSOR == 1) 
+  digitalWrite(UP_5V,HIGH);
+  digitalWrite(DOWN_5V,HIGH);
 }
 
 void down(){
@@ -256,7 +303,9 @@ void down(){
   digitalWrite(Motor_B,HIGH);
 
   //power the downwards Reed 
-  if (STOP_BY_SENSOR == 1) digitalWrite(DOWN_5V,HIGH);
+  //if (STOP_BY_SENSOR == 1) 
+  digitalWrite(DOWN_5V,HIGH);
+  digitalWrite(UP_5V,HIGH);
 }
 
 void move_complete_ISR(){
