@@ -14,7 +14,7 @@
  */
 
 //TODO: Check if Pin 0 can be used for pin 2; otherwise fix it on PCB
-//      PCB has no MOTOR Conector ...
+//      PCB has no MOTOR Connector ...
 
 #include <EEPROM.h>
 #include <avr/sleep.h>
@@ -94,72 +94,77 @@ void loop() {
 //LowPower.idle(SLEEP_8S, ADC_OFF, TIMER4_OFF, TIMER3_OFF, TIMER1_OFF, TIMER0_OFF, SPI_OFF, USART1_OFF, TWI_OFF, USB_OFF);
   LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);  
   timecnt++;
-  
-  if (move_complete_interr == 1){ 
-        if (position_door == 1){ // open
-          close_door(TIME_CLOSE);
-        } else {
-          open_door(TIME_OPEN);
-        }
-     move_complete_interr = 0;
-     move_step_interr = 0;
-     if (timecnt >= TimeIntervall) {timecnt = 0;}
-  } else if(move_step_interr == 1) {
 
-     if (dir == 0){
-        down();
-        dir = 1;
-     } else {
-        up();
-        dir = 0;
-     }
-     digitalWrite(Motor_En, HIGH);
-     while (move_step_interr == 1) {
-        delay(200);
-        move_step_interr = digitalRead(MOVE_STEP);//digitalRead(BTN_step_read);
+  if (move_complete_interr == 1){ // Move by Button: complete move to end
+    if (position_door == 1){ // open
+      close_door(TIME_CLOSE);
+    } else {
+      open_door(TIME_OPEN);
+    }
+    move_complete_interr = 0;
+    move_step_interr = 0;
+    if (timecnt >= TimeIntervall) {
+     timecnt = 0;
+    }
+  } else if(move_step_interr == 1) {  // Move by Button: Just as lang as button is holded; Stopped by Reeds
+
+    if (dir == 0){
+      down();
+      dir = 1;
+    } else {
+      up();
+      dir = 0;
+    }
+    digitalWrite(Motor_En, HIGH);
+    while (move_step_interr == 1) {
+      delay(200);
+      move_step_interr = digitalRead(MOVE_STEP);//digitalRead(BTN_step_read);
         
-        if ((move_step_interr == 1) && (STOP_BY_SENSOR == 1)) {
-           int endPos = 0;
-           if (dir == 1) endPos = digitalRead(End_down); // moving down
-           if (dir == 0) endPos = digitalRead(End_up);
-           if (endPos == 1) move_step_interr = 0; // break loop due to End of door
-        }
-     }
+      if ((move_step_interr == 1) && (STOP_BY_SENSOR == 1)) {
+        int endPos = 0;
+        if (dir == 1) endPos = digitalRead(End_down); // moving down
+        if (dir == 0) endPos = digitalRead(End_up);
+        if (endPos == 1) move_step_interr = 0; // break loop due to End of door
+      }
+    }
 
-     // Stop Motor again
-     digitalWrite(Motor_En,LOW); // Stop
-     digitalWrite(Motor_A,LOW);   // Save power
-     digitalWrite(Motor_B,LOW);
-     digitalWrite(MOTOR_OUT_5V,LOW);
+    // Stop Motor again
+    digitalWrite(Motor_En,LOW); // Stop
+    digitalWrite(Motor_A,LOW);   // Save power
+    digitalWrite(Motor_B,LOW);
+    digitalWrite(MOTOR_OUT_5V,LOW);
 
-     //Unpower the Reeds
-     if (STOP_BY_SENSOR == 1) { 
-       digitalWrite(DOWN_5V,LOW);
-       digitalWrite(UP_5V,LOW);
-     }
+    //Unpower the Reeds
+    if (STOP_BY_SENSOR == 1) { 
+      digitalWrite(DOWN_5V,LOW);
+      digitalWrite(UP_5V,LOW);
+    }
      
-     move_complete_interr = 0;
-     move_step_interr = 0;
-     if (timecnt >= TimeIntervall) {timecnt = 0;}
-  
-  } else{
-        if (timecnt >= TimeIntervall) {
-            digitalWrite(Photo_Pwr,HIGH); delay(100);
-            light = analogRead(PR); delay (100);
-            digitalWrite(Photo_Pwr,LOW);
-            //Serial.println(light);
-            // evening
-            if (light <= LightThreshold_close && light_pre > LightThreshold_close && position_door == 1){
-               close_door(TIME_CLOSE);
-            } else if (light > LightThreshold_open && light_pre <= LightThreshold_open && position_door == 0) {
-              open_door(TIME_OPEN);
-            }
-            light_pre = light;
+    move_complete_interr = 0;
+    move_step_interr = 0;
+    if (timecnt >= TimeIntervall) {
+      timecnt = 0;
+    }
+ 
+  } else {  //Move by Ligh Sensor
+    if (timecnt >= TimeIntervall) {
+      digitalWrite(Photo_Pwr,HIGH); delay(100);
+      light = analogRead(PR); delay (100);
+      digitalWrite(Photo_Pwr,LOW);
+
+      // evening
+      if (light <= LightThreshold_close && light_pre > LightThreshold_close && position_door == 1){
+        close_door(TIME_CLOSE);
+      } else if (light > LightThreshold_open && light_pre <= LightThreshold_open && position_door == 0) {
+        open_door(TIME_OPEN);
+      }
+      
+      light_pre = light;
      
-            move_complete_interr = 0;
-            move_step_interr = 0;
-            timecnt = 0;
-         }
+      move_complete_interr = 0;
+      move_step_interr = 0;
+      timecnt = 0;
+    }
   }
 }//loop
 
@@ -182,7 +187,7 @@ void open_door(unsigned int open_time){
   }
   
   digitalWrite(Motor_En,LOW); // Stop
-  digitalWrite(Motor_A,LOW);   // Save power
+  digitalWrite(Motor_A,LOW);  // Save power
   digitalWrite(Motor_B,LOW);
   digitalWrite(MOTOR_OUT_5V,LOW);
 
@@ -201,7 +206,7 @@ void open_door(unsigned int open_time){
 
 //close the door
 void close_door(unsigned int closeTime){
-  // Motor Setting to cloase door
+  // Motor Setting to close door
   down();
 
   // enable Motor
@@ -219,7 +224,7 @@ void close_door(unsigned int closeTime){
   
   // Stop Motor again
   digitalWrite(Motor_En,LOW); // Stop
-  digitalWrite(Motor_A,LOW);   // Save power
+  digitalWrite(Motor_A,LOW);  // Save power
   digitalWrite(Motor_B,LOW);
   digitalWrite(MOTOR_OUT_5V,LOW);
 
