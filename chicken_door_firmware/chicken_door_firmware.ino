@@ -44,7 +44,7 @@
 
 
 #define TIME_OPEN  17000
-#define TIME_CLOSE 14200
+#define TIME_CLOSE 11200
 
 #define LightThreshold_close 18
 #define LightThreshold_open 25
@@ -152,8 +152,9 @@ void loop() {
 
       // evening
       if (light <= LightThreshold_close && light_pre > LightThreshold_close && position_door == 1){
-        if (close_door(TIME_CLOSE,1) > 0) { // first try did not work out.
-          close_door(TIME_CLOSE,0); // close by time.
+        int timeOutVar = close_door(TIME_CLOSE,1);
+        if ( timeOutVar > 0) { // first try did not work out.
+          close_door_ifTimeout(TIME_CLOSE,0); // close by time. Inverted due to order on line
         }
       } else if (light > LightThreshold_open && light_pre <= LightThreshold_open && position_door == 0) {
          if (open_door(TIME_OPEN,1) == 1){ // Timeout!
@@ -217,6 +218,51 @@ byte open_door(unsigned int open_time, unsigned int STOP_BY_SENSOR){
 }
 
 
+// close door if Timeout
+byte close_door_ifTimeout(unsigned int open_time, unsigned int STOP_BY_SENSOR){
+  //Motor Settings for upwards
+  up();
+
+  byte timeoutFlag = 0;
+ 
+  // enable Motor
+  digitalWrite(Motor_En, HIGH);
+
+  if (STOP_BY_SENSOR == 1) {
+    bool endPos = 0;
+    unsigned int cntTime = 0;
+    while (endPos == 0){
+      endPos = digitalRead(End_up);
+      delay(5); // 5ms;
+      cntTime++;
+      if (cntTime > 6000) {// ~30 sek; Timeout
+        timeoutFlag = 1;
+        break; 
+      }
+    }
+  } else { // stop by time
+    delay(open_time);
+  }
+  
+  digitalWrite(Motor_En,LOW); // Stop
+  digitalWrite(Motor_A,LOW);  // Save power
+  digitalWrite(Motor_B,LOW);
+  digitalWrite(MOTOR_OUT_5V,LOW);
+
+  //Unpower the Reeds
+  //if (STOP_BY_SENSOR == 1) { 
+    digitalWrite(DOWN_5V,LOW);
+    digitalWrite(UP_5V,LOW);
+ // }
+
+  // Save status to EEPROM
+  // Even if timeout is active, door is most likely open as no sideflip of string is possible.
+  EEPROM.write(0,0); // close
+  position_door = 0;
+
+  return timeoutFlag;
+}
+
 
 //close the door
 byte close_door(unsigned int closeTime, unsigned int STOP_BY_SENSOR){
@@ -235,11 +281,13 @@ byte close_door(unsigned int closeTime, unsigned int STOP_BY_SENSOR){
       endPos = digitalRead(End_down);
       if (endPos == 1) {
         timeoutFlag = 0;
+        break;
       } else {
-        if (cntTime > 800) {  //~ 4sek to avoid measurement in open position.
+        if (cntTime > 600) {  //~ 3sek to avoid measurement in open position.
           endPos = digitalRead(End_up);
           if (endPos == 1) {
             timeoutFlag = 1; // again in opened position;
+            endPos = 1;
             break;
           }
         }
@@ -255,7 +303,6 @@ byte close_door(unsigned int closeTime, unsigned int STOP_BY_SENSOR){
   } else { // stop by time
     delay(closeTime);
   }
-  // closed!
   
   // Stop Motor again
   digitalWrite(Motor_En,LOW); // Stop
